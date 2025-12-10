@@ -2,26 +2,29 @@
 import React, { useEffect, useRef, useState } from 'react';
 
 /**
- * ChatLauncher (single-column)
- *
- * Props:
- * - welcomeMessage: string
- * - suggestions: initial suggestions array
- * - fetchSuggestionsUrl: optional URL to fetch initial suggestions
- * - endpoint: server endpoint for messages (default '/.netlify/functions/dialogflow')
+ * ChatLauncher — welcome + suggestions rendered inside the same scrollable messages area
+ * - Header + input are fixed
+ * - Welcome & suggestions live inside messagesWrap so they scroll with conversation
+ * - No hardcoded bot message after send; bot replies appended only when server returns
  */
 export default function ChatLauncher({
-  welcomeMessage = 'Hi — Welcome! I can help with questions about our service.',
-  suggestions = ['AboutUs', 'what is ScriptBees', 'Features'],
+  welcomeMessage = 'Hi there! 👋 Welcome to ScriptBees. I’m your virtual assistant — here to answer your questions about our services, policies, or any other info you need. What can I help you with today?',
+  suggestions = [
+    'What services do you offer?',
+    'Do you provide AI/ML solutions?',
+    'Can you help me build or improve my application?',
+    'What is your development process and how do projects work?'
+  ],
   fetchSuggestionsUrl = undefined,
   endpoint = '/.netlify/functions/dialogflow',
 }) {
-  const [messages, setMessages] = useState([{ id: 'bot-welcome', from: 'bot', text: welcomeMessage }]);
+  // conversation messages only (bot replies come from server)
+  const [messages, setMessages] = useState([]);
   const [loading, setLoading] = useState(false);
   const [suggestionsState, setSuggestionsState] = useState(Array.isArray(suggestions) ? suggestions : []);
   const [suggestionsVisible, setSuggestionsVisible] = useState(Boolean(suggestionsState.length));
   const inputRef = useRef(null);
-  const boxRef = useRef(null);
+  const messagesRef = useRef(null);
 
   // session id
   useEffect(() => {
@@ -32,7 +35,7 @@ export default function ChatLauncher({
     }
   }, []);
 
-  // optionally fetch suggestions
+  // optional fetch suggestions
   useEffect(() => {
     if (!fetchSuggestionsUrl) return;
     let mounted = true;
@@ -53,25 +56,25 @@ export default function ChatLauncher({
     return () => { mounted = false; };
   }, [fetchSuggestionsUrl]);
 
-  // autoscroll
+  // autoscroll to bottom when messages change
   useEffect(() => {
-    if (boxRef.current) boxRef.current.scrollTop = boxRef.current.scrollHeight;
+    if (!messagesRef.current) return;
+    // small timeout ensures the DOM updates before scrolling
+    setTimeout(() => {
+      messagesRef.current.scrollTop = messagesRef.current.scrollHeight;
+    }, 30);
   }, [messages, loading]);
 
-  // send to server
+  // send text -> append user then call server -> append bot only when returned
   async function sendToBot(text) {
     if (!text || !text.toString().trim()) return;
     const trimmed = text.toString().trim();
 
-    // user message
+    // append user message immediately
     const userMsg = { id: `u-${Date.now()}`, from: 'user', text: trimmed };
     setMessages((m) => [...m, userMsg]);
 
-    // bot placeholder
-    const placeholderId = `p-${Date.now()}`;
-    setMessages((m) => [...m, { id: placeholderId, from: 'bot', text: 'Typing…', loading: true }]);
     setLoading(true);
-
     try {
       const sessionId = localStorage.getItem('dialogflow_session_id');
       const res = await fetch(endpoint, {
@@ -86,33 +89,42 @@ export default function ChatLauncher({
       }
 
       const data = await res.json();
-      const reply = data?.reply ?? data?.fulfillmentText ?? "Sorry, I don't have an answer for that.";
+      const reply = (data?.reply ?? data?.fulfillmentText ?? '')?.toString().trim();
       const payload = data?.payload ?? null;
 
-      setMessages((m) => m.map((msg) => (msg.id === placeholderId ? { ...msg, text: reply, loading: false, payload } : msg)));
+      // only append server-provided content (no hardcoded filler)
+      if (reply) {
+        const botMsg = { id: `b-${Date.now()}`, from: 'bot', text: reply, payload: payload ?? null };
+        setMessages((m) => [...m, botMsg]);
+      } else if (payload && payload.buttons && payload.buttons.length) {
+        // payload-only response -> append message with empty text but with payload (so buttons render)
+        const botMsg = { id: `b-${Date.now()}`, from: 'bot', text: '', payload };
+        setMessages((m) => [...m, botMsg]);
+      } else {
+        // nothing returned: do not inject any chat message (silently ignore)
+        console.warn('Dialogflow returned empty reply and no payload for:', trimmed);
+      }
     } catch (err) {
       console.error('sendToBot error', err);
-      setMessages((m) => m.map((msg) => (msg.id === placeholderId ? { ...msg, text: 'Sorry — something went wrong.', loading: false } : msg)));
+      // do not inject a hardcoded error message; keep UI silent and log
     } finally {
       setLoading(false);
     }
   }
 
-  // suggestion clicked
+  // suggestion click: keep suggestions visible (they're inside the scrollable area now)
   function handleSuggestionClick(s) {
     if (loading) return;
-    setSuggestionsVisible(false);
     sendToBot(s);
   }
 
-  // bot-sent inline buttons
+  // bot payload button click: keep buttons visible after click
   function handleBotButtonClick(messageId, button) {
-    setMessages((prev) => prev.map((m) => m.id === messageId ? { ...m, payload: { ...m.payload, buttons: [] } } : m));
+    // do NOT clear buttons; keep them visible and clickable
     const toSend = button.payload ?? button.title ?? button.text ?? '';
     if (toSend) sendToBot(toSend);
   }
 
-  // input send
   function handleSendInput() {
     const el = inputRef.current;
     if (!el) return;
@@ -122,24 +134,25 @@ export default function ChatLauncher({
     sendToBot(v);
   }
 
-  // styles (centered single column)
+  // styles: header + input fixed; messagesWrap is the single scrollable area
   const styles = {
-    page: { minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', background: '#f3f4f6', padding: 20, fontFamily: 'Inter, system-ui, Arial, sans-serif' },
-    wrapper: { width: '680px', maxWidth: '96%', display: 'flex', flexDirection: 'column', gap: 12 },
+    page: { minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', background: '#f3f4f6', padding: 24, fontFamily: 'Inter, system-ui, Arial, sans-serif' },
+    wrapper: { width: '600px', maxWidth: '96%', display: 'flex', flexDirection: 'column', gap: 12 },
     header: { background: '#7AC142', color: '#fff', padding: 14, fontWeight: 800, borderRadius: 10, display: 'flex', justifyContent: 'space-between', alignItems: 'center' },
-    subtitle: { fontSize: 13, color: '#ecfdf5', opacity: 0.95 },
+    chatCard: { borderRadius: 10, overflow: 'hidden', background: '#fff', boxShadow: '0 8px 24px rgba(2,6,23,0.06)', display: 'flex', flexDirection: 'column', height: '72vh' },
+    // messagesWrap is the single scrolling block (contains welcome, suggestions, messages)
+    messagesWrap: { padding: 16, display: 'flex', flexDirection: 'column', gap: 12, overflowY: 'auto', flex: 1, background: '#f8fafc' },
+    welcome: { background: '#fff', border: '1px solid #eef2f7', padding: 12, borderRadius: 8, color: '#0f172a', fontSize: 14, lineHeight: 1.5 },
     suggestionsBox: { padding: 10, borderRadius: 8, background: '#fff', border: '1px solid #eef2f7' },
     chipsRow: { display: 'flex', gap: 8, flexWrap: 'wrap' },
     chip: { padding: '8px 12px', borderRadius: 999, border: '1px solid #cbd5e1', background: '#fff', color: '#0f172a', cursor: 'pointer', fontWeight: 700 },
-    chatPanel: { height: '60vh', borderRadius: 10, overflow: 'hidden', display: 'flex', flexDirection: 'column', background: '#fff', boxShadow: '0 8px 24px rgba(2,6,23,0.06)' },
-    messages: { padding: 16, display: 'flex', flexDirection: 'column', gap: 10, overflowY: 'auto', flex: 1, background: '#f8fafc' },
+    messages: { display: 'flex', flexDirection: 'column', gap: 10 },
     botBubble: { background: '#fff', color: '#0f172a', padding: '10px 14px', borderRadius: 12, maxWidth: '78%', fontSize: 14, boxShadow: '0 1px 0 rgba(2,6,23,0.03)' },
     userBubble: { background: '#7AC142', color: '#fff', padding: '10px 14px', borderRadius: 12, maxWidth: '78%', fontSize: 14, alignSelf: 'flex-end' },
-    inputRow: { padding: 12, borderTop: '1px solid #eef2f7', display: 'flex', gap: 8, alignItems: 'center', background: '#fff' },
+    inputRow: { padding: 12, borderTop: '1px solid #eef2f7', display: 'flex', gap: 8, alignItems: 'center', background: '#fff', flex: '0 0 auto' },
     input: { flex: 1, padding: '10px 12px', borderRadius: 8, border: '1px solid #e6edf3', outline: 'none', fontSize: 14 },
     sendBtn: { padding: '10px 14px', borderRadius: 8, background: '#7AC142', color: '#fff', border: 'none', cursor: 'pointer', fontWeight: 700 },
-    smallNote: { fontSize: 12, color: '#6b7280', textAlign: 'center' },
-    session: { fontSize: 12, color: '#6b7280', marginTop: 6, textAlign: 'center' },
+    footerNote: { fontSize: 12, color: '#6b7280', textAlign: 'center', paddingTop: 8 }
   };
 
   return (
@@ -149,42 +162,49 @@ export default function ChatLauncher({
           <div>ScriptBees Assistant</div>
         </div>
 
-        {suggestionsVisible && suggestionsState && suggestionsState.length > 0 && (
-          <div style={styles.suggestionsBox}>
-            <div style={{ fontSize: 13, fontWeight: 700, marginBottom: 8 }}>Quick suggestions</div>
-            <div style={styles.chipsRow}>
-              {suggestionsState.map((s, i) => (
-                <button key={`${i}-${s}`} onClick={() => handleSuggestionClick(s)} style={styles.chip} disabled={loading} aria-label={`Suggestion ${s}`}>
-                  {s || 'EMPTY'}
-                </button>
+        <div style={styles.chatCard}>
+          {/* single scrolling area: welcome + suggestions + messages */}
+          <div style={styles.messagesWrap} ref={messagesRef} aria-live="polite">
+            {/* welcome sits at the top of the scrollable area */}
+            <div style={styles.welcome}>{welcomeMessage}</div>
+
+            {/* suggestions are now inside the scroll area and will scroll away as messages grow */}
+            {suggestionsVisible && suggestionsState && suggestionsState.length > 0 && (
+              <div style={styles.suggestionsBox}>
+                <div style={{ fontSize: 13, fontWeight: 700, marginBottom: 8 }}>Quick suggestions</div>
+                <div style={styles.chipsRow}>
+                  {suggestionsState.map((s, i) => (
+                    <button key={`${i}-${s}`} onClick={() => handleSuggestionClick(s)} style={styles.chip} disabled={loading} aria-label={`Suggestion ${s}`}>
+                      {s || 'EMPTY'}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {/* conversation messages */}
+            <div style={styles.messages}>
+              {messages.map((m) => (
+                <div key={m.id} style={{ display: 'flex', justifyContent: m.from === 'user' ? 'flex-end' : 'flex-start' }}>
+                  <div style={m.from === 'user' ? styles.userBubble : styles.botBubble}>
+                    <div style={{ whiteSpace: 'pre-wrap' }}>{m.text}</div>
+
+                    {m.payload && Array.isArray(m.payload.buttons) && m.payload.buttons.length > 0 && (
+                      <div style={{ marginTop: 8, display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+                        {m.payload.buttons.map((b, idx) => (
+                          <button key={`${m.id}-btn-${idx}`} onClick={() => handleBotButtonClick(m.id, b)} style={{ ...styles.chip, fontWeight: 800 }}>
+                            {b.title ?? b.text ?? `Option ${idx + 1}`}
+                          </button>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                </div>
               ))}
             </div>
           </div>
-        )}
 
-        <div style={styles.chatPanel}>
-          <div style={styles.messages} ref={boxRef} aria-live="polite">
-            {messages.map((m) => (
-              <div key={m.id} style={{ display: 'flex', justifyContent: m.from === 'user' ? 'flex-end' : 'flex-start' }}>
-                <div style={m.from === 'user' ? styles.userBubble : styles.botBubble}>
-                  <div style={{ whiteSpace: 'pre-wrap' }}>{m.text}</div>
-
-                  {m.payload && Array.isArray(m.payload.buttons) && m.payload.buttons.length > 0 && (
-                    <div style={{ marginTop: 8, display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-                      {m.payload.buttons.map((b, idx) => (
-                        <button key={`${m.id}-btn-${idx}`} onClick={() => handleBotButtonClick(m.id, b)} style={{ ...styles.chip, fontWeight: 800 }}>
-                          {b.title ?? b.text ?? `Option ${idx + 1}`}
-                        </button>
-                      ))}
-                    </div>
-                  )}
-
-                  {m.loading && <div style={{ marginTop: 6, fontSize: 12, color: '#6b7280' }}>Loading…</div>}
-                </div>
-              </div>
-            ))}
-          </div>
-
+          {/* input row stays fixed under the scroll area */}
           <div style={styles.inputRow}>
             <input
               ref={inputRef}
@@ -198,7 +218,7 @@ export default function ChatLauncher({
           </div>
         </div>
 
-        <div style={styles.session}>Powered by ScriptBees</div>
+        <div style={styles.footerNote}>Powered by ScriptBees</div>
       </div>
     </div>
   );
