@@ -137,7 +137,7 @@ export default function ChatLauncher({
   // styles: header + input fixed; messagesWrap is the single scrollable area
   const styles = {
     page: { minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', background: '#f3f4f6', padding: 24, fontFamily: 'Inter, system-ui, Arial, sans-serif' },
-    wrapper: { width: '600px', maxWidth: '96%', display: 'flex', flexDirection: 'column', gap: 12 },
+    wrapper: { width: '550px', maxWidth: '96%', display: 'flex', flexDirection: 'column', gap: 12 },
     header: { background: '#7AC142', color: '#fff', padding: 14, fontWeight: 800, borderRadius: 10, display: 'flex', justifyContent: 'space-between', alignItems: 'center' },
     chatCard: { borderRadius: 10, overflow: 'hidden', background: '#fff', boxShadow: '0 8px 24px rgba(2,6,23,0.06)', display: 'flex', flexDirection: 'column', height: '72vh' },
     // messagesWrap is the single scrolling block (contains welcome, suggestions, messages)
