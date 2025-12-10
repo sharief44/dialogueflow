@@ -3,3 +3,8 @@ build/
 .env
 .DS_Store
 .vscode/
+# Local Netlify folder
+.netlify
+deno.lock
+package-lock.json
+
