@@ -33,18 +33,19 @@ app.post('/', async (req, res) => {
     }
 
     const body = req.body || {};
-    const intent = body.queryResult?.intent?.displayName || '';
+    const intentRaw = body.queryResult?.intent?.displayName || '';
+    const intent = intentRaw.toString().trim();
     const session = body.session || '';
 
     console.log("🔥 Webhook intent:", intent);
 
     /* -------------------------------------------------
-       DEFAULT WELCOME + SHOW OPTIONS (your earlier logic)
+       DEFAULT WELCOME + SHOW OPTIONS
     --------------------------------------------------- */
-    if (intent === 'Show_Options' || intent === 'Default Welcome Intent') {
+    if (intent === 'Show_Options' || intent === 'Default Welcome Intent' || intent === 'Default_Welcome') {
       const buttons = [
         { title: 'AboutUs', payload: 'AboutUs' },
-        { title: 'What is Scriptbees?', payload: 'what is Scriptbees' },
+        { title: 'What is Scriptbees?', payload: 'what is scriptbees' },
         { title: 'Documentation', payload: 'Documentation' },
         { title: 'Contact support', payload: 'Contact support' }
       ];
@@ -52,7 +53,41 @@ app.post('/', async (req, res) => {
     }
 
     /* -------------------------------------------------
-       🍀 YOUR CUSTOM 4 INTENTS
+       ABOUT / CONTACT INTENTS (new)
+       Supports multiple common display-name variants
+    --------------------------------------------------- */
+    const isAboutIntent = ['AboutUs', 'About_Us', 'About', 'about_us', 'aboutus'].includes(intent);
+    const isContactIntent = ['Contact support', 'Contact_Support', 'Contact_Us', 'Contact', 'contact_support', 'contact_us'].includes(intent);
+
+    if (isAboutIntent) {
+      // Return a short about text with an optional payload of next-step buttons
+      return res.json(buildButtonFulfillment(
+        'ScriptBees is a software engineering company building web & mobile apps, cloud and DevOps solutions, data engineering, AI/ML systems, and ongoing support.',
+        [
+          { title: 'Our Services', payload: 'What services do you offer' },
+          { title: 'Documentation', payload: 'Documentation' },
+          { title: 'Contact support', payload: 'Contact support' }
+        ]
+      ));
+    }
+
+    if (isContactIntent) {
+      // Provide contact details and optional quick actions
+      return res.json({
+        fulfillmentMessages: [
+          { text: { text: ['You can reach ScriptBees support at support@scriptbees.com or call +1-555-555-5555. Our office hours are Mon–Fri 9am–6pm (UTC).'] } },
+          { payload: { buttons: [
+              { title: 'Email support', payload: 'Email support' },
+              { title: 'Documentation', payload: 'Documentation' },
+              { title: 'Talk to sales', payload: 'Contact sales' }
+            ] } }
+        ],
+        fulfillmentText: 'You can reach ScriptBees support at support@scriptbees.com or call +1-555-555-5555.'
+      });
+    }
+
+    /* -------------------------------------------------
+       YOUR EXISTING CUSTOM INTENTS
     --------------------------------------------------- */
 
     // 1️⃣ What services do you offer? — intent: company_services
@@ -84,7 +119,7 @@ app.post('/', async (req, res) => {
     }
 
     // 3️⃣ Do you provide AI/ML solutions? — intent: company_AI&ML
-    if (intent === 'company_AI&ML') {
+    if (intent === 'company_AI&ML' || intent === 'company_AI_ML') {
       return res.json(
         buildButtonFulfillment(
           'Yes! We build AI models, ML pipelines, automation, predictive analytics, and chatbot systems.',

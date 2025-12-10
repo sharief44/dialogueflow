@@ -11,7 +11,9 @@ export default function App() {
           'What services do you offer?',
           'Do you provide AI/ML solutions?',
           'Can you help me build or improve my application?',
-          'What is your development process and how do projects work?'
+          'About Us',
+          'What is your development process and how do projects work?',
+          'Contact Us',
         ]}
         endpoint="/.netlify/functions/dialogflow"
       />
